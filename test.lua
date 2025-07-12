@@ -1,5 +1,5 @@
 -- Configuration
-local TARGET_PLAYER_NAME = "E750gamer" -- <<< CHANGE THIS to the player whose data you want to check
+local TARGET_PLAYER_NAME = "Sammytrew7" -- <<< CHANGE THIS to the player whose data you want to check
 local MAX_STALL_LISTINGS = 10 -- A common max number of listings.
                              -- The decompiled code uses 'v_u_26 = v25.TradeRealm.MaxSlots'.
                              -- If this script doesn't find all listings, you might need to adjust this value.
