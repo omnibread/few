@@ -1,35 +1,90 @@
--- ... (After confirming it's a RemoteEvent as per previous step) ...1
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
 
-local originalFireServer = remote.FireServer -- This will error as before
+-- Directly require the necessary modules from ReplicatedStorage
+-- This assumes these ModuleScripts are directly within ReplicatedStorage.
+-- If they are nested (e.g., in ReplicatedStorage.Modules),
+-- the paths below would need to be adjusted (e.g., "Modules.RemoteUtils").
+local RemoteUtils = require(ReplicatedStorage:WaitForChild("RemoteUtils"))
+local PlayerWrapper = require(ReplicatedStorage:WaitForChild("PlayerWrapper"))
+local MarketStallService = require(ReplicatedStorage:WaitForChild("MarketStallService"))
+local DisplayUtils = require(ReplicatedStorage:WaitForChild("DisplayUtils")) -- Included as it's part of the original context
 
--- Attempt to get it from the metatable
-if not originalFireServer then
-    local remoteMeta = debug.getmetatable(remote)
-    if remoteMeta and remoteMeta.__index then
-        originalFireServer = rawget(remoteMeta.__index, "FireServer") -- Try rawget to bypass proxies
-        if not originalFireServer then
-            -- Even deeper: sometimes built-in methods are on the metatable of the metatable.
-            -- This is getting very specific and executor-dependent.
-            -- For most cases, __index of the main metatable is enough.
-            local builtInMeta = debug.getmetatable(remoteMeta.__index)
-            if builtInMeta and builtInMeta.__index then
-                originalFireServer = rawget(builtInMeta.__index, "FireServer")
-            end
+local PurchaseMarketStallSkin_RF = RemoteUtils.GetRemoteEvent("PurchaseMarketStallSkin")
+
+local function purchaseSkinForFree(skinModel)
+    if not skinModel or not skinModel:IsA("Model") then
+        warn("Invalid skin model provided.")
+        return false
+    end
+
+    local skinName = skinModel:GetAttribute("Name")
+    local skinDisplayName = skinModel:GetAttribute("DisplayName") or skinName
+
+    if not skinName or skinName == "" then
+        warn("Skin model has no 'Name' attribute. Skipping.")
+        return false
+    end
+
+    local playerWrapper = PlayerWrapper.GetClient()
+    if playerWrapper and MarketStallService.PlayerOwnsSkin(playerWrapper, skinName) then
+        print(string.format("Already own skin: %s. Skipping.", skinDisplayName))
+        return true
+    end
+
+    local originalPrice = skinModel:GetAttribute("Price")
+    local originalCurrency = skinModel:GetAttribute("Currency")
+
+    skinModel:SetAttribute("Price", 0)
+    skinModel:SetAttribute("Currency", "Shooms")
+
+    print(string.format("Attempting to purchase skin '%s' (originally %s %s) for FREE...",
+        skinDisplayName, originalPrice, originalCurrency))
+
+    local success, result = pcall(function()
+        return PurchaseMarketStallSkin_RF:InvokeServer(skinName)
+    end)
+
+    skinModel:SetAttribute("Price", originalPrice)
+    skinModel:SetAttribute("Currency", originalCurrency)
+
+    if success then
+        if result == true then
+            print(string.format("Successfully (client-side reported) purchased '%s'!", skinDisplayName))
+            return true
+        else
+            warn(string.format("Failed to purchase '%s'. Server response: %s", skinDisplayName, tostring(result)))
+            return false
+        end
+    else
+        warn(string.format("Error invoking server for '%s': %s", skinDisplayName, tostring(result)))
+        return false
+    end
+end
+
+local potentialSkinModels = {}
+for _, descendant in ipairs(workspace:GetDescendants()) do
+    if descendant:IsA("Model") and descendant:GetAttribute("IsMarketStallSkin") then
+        if descendant:GetAttribute("Name") and descendant:GetAttribute("DisplayName") and
+           descendant:GetAttribute("Price") and descendant:GetAttribute("Currency") then
+            table.insert(potentialSkinModels, descendant)
+        end
+    elseif string.find(descendant.Name, "MarketStallSkinPurchase", 1, true) then
+        if descendant:GetAttribute("Name") and descendant:GetAttribute("DisplayName") and
+           descendant:GetAttribute("Price") and descendant:GetAttribute("Currency") then
+            table.insert(potentialSkinModels, descendant)
         end
     end
 end
 
-if not originalFireServer then
-    warn("Could not find original FireServer method even via metatable for", REMOTE_PATH)
-    return
+if #potentialSkinModels > 0 then
+    print(string.format("Found %d potential market stall skins to attempt purchasing.", #potentialSkinModels))
+    for i, skinModel in ipairs(potentialSkinModels) do
+        purchaseSkinForFree(skinModel)
+        task.wait(0.1)
+    end
+    print("Attempted to purchase all identified market stall skins.")
+else
+    warn("No potential market stall skin models found in workspace. Exploit might need adjustment for current game structure.")
 end
-
-print("Successfully found original FireServer method for hooking.")
-
--- Now proceed with your hook as before:
-remote.FireServer = function(self, ...)
-    -- ... (your logging code) ...
-    return originalFireServer(self, ...)
-end
-
-print("Successfully hooked 'BuyStallItem:FireServer()'. Waiting for calls...")
