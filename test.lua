@@ -1,4 +1,4 @@
--- ... (After confirming it's a RemoteEvent as per previous step) ...
+-- ... (After confirming it's a RemoteEvent as per previous step) ...1
 
 local originalFireServer = remote.FireServer -- This will error as before
 
