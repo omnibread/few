@@ -1,62 +1,34 @@
--- Define the target RemoteEvent path
-local REMOTE_PATH = "ReplicatedStorage.Remotes.BuyStallItem"
+-- ... (After confirming it's a RemoteEvent as per previous step) ...
 
--- Find the remote
-local remote = game:GetService("ReplicatedStorage"):FindFirstChild("Remotes")
-if remote then
-    remote = remote:FindFirstChild("BuyStallItem")
+local originalFireServer = remote.FireServer -- This will error as before
+
+-- Attempt to get it from the metatable
+if not originalFireServer then
+    local remoteMeta = debug.getmetatable(remote)
+    if remoteMeta and remoteMeta.__index then
+        originalFireServer = rawget(remoteMeta.__index, "FireServer") -- Try rawget to bypass proxies
+        if not originalFireServer then
+            -- Even deeper: sometimes built-in methods are on the metatable of the metatable.
+            -- This is getting very specific and executor-dependent.
+            -- For most cases, __index of the main metatable is enough.
+            local builtInMeta = debug.getmetatable(remoteMeta.__index)
+            if builtInMeta and builtInMeta.__index then
+                originalFireServer = rawget(builtInMeta.__index, "FireServer")
+            end
+        end
+    end
 end
 
-if not remote or not remote:IsA("RemoteEvent") then
-    warn("Could not find the RemoteEvent at:", REMOTE_PATH)
+if not originalFireServer then
+    warn("Could not find original FireServer method even via metatable for", REMOTE_PATH)
     return
 end
 
-print("Found RemoteEvent:", REMOTE_PATH)
+print("Successfully found original FireServer method for hooking.")
 
--- Store the original FireServer method
--- We need to capture this *before* we override it.
-local originalFireServer = remote.FireServer
-
--- Override the FireServer method for this specific RemoteEvent instance
+-- Now proceed with your hook as before:
 remote.FireServer = function(self, ...)
-    -- 'self' will be the RemoteEvent itself (in this case, 'remote')
-    -- '...' captures all the arguments passed to FireServer
-
-    print("\n--- RemoteEvent Fired! ---")
-    print("Remote:", REMOTE_PATH)
-
-    -- Print arguments passed
-    local args = {...}
-    if #args > 0 then
-        print("Arguments Passed:")
-        for i, v in ipairs(args) do
-            -- Attempt to get a more descriptive representation of the value
-            local argString = tostring(v)
-            if typeof(v) == "Instance" and v.Name then
-                argString = v.Name .. " (Instance)"
-            elseif typeof(v) == "table" then
-                argString = "Table (count: " .. #v .. ")" -- Simplified for tables
-            end
-            print(string.format("  [%d]: %s (Type: %s)", i, argString, typeof(v)))
-        end
-    else
-        print("No arguments passed.")
-    end
-
-    -- Print the call stack to identify the caller script and line number
-    -- debug.traceback() gives you the current execution stack.
-    -- The most relevant information will be the lines immediately above this function call.
-    print("\n--- Call Stack (Caller Information) ---")
-    print(debug.traceback()) -- This will show you where remote:FireServer() was called from.
-    print("---------------------------------------\n")
-
-    -- Call the original FireServer method to ensure the game's functionality is not broken.
-    -- It's crucial to pass 'self' (the remote object itself) as the first argument
-    -- when calling a method that was originally called with colon syntax (e.g., remote:FireServer(...)).
-    -- If the original method was called with dot syntax (e.g., remote.FireServer(remote, ...)),
-    -- then you'd call originalFireServer(self, ...). Since it's nearly always colon for remotes,
-    -- passing 'self' explicitly is correct.
+    -- ... (your logging code) ...
     return originalFireServer(self, ...)
 end
 
