@@ -1,21 +1,22 @@
 -- Configuration
-local TARGET_PLAYER_NAME = "kytomic" -- <<< CHANGE THIS to the player whose data you want to check
-                                       -- Note: Data for other players might not always be fully replicated to your client.
-                                       -- If you only get data for LocalPlayer, try changing this to game:GetService("Players").LocalPlayer.Name
+-- IMPORTANT: For data like MarketStalls (which is player-specific saved data),
+-- it's highly probable that ONLY the LocalPlayer's data is fully replicated to your client.
+-- Trying to access another player's Data.MarketStalls might result in nil,
+-- even if the path is technically correct, because the server simply doesn't send it to you.
+local TARGET_PLAYER_NAME = game:GetService("Players").LocalPlayer.GabiePomni -- Strongly recommended to test with LocalPlayer first.
+                                                                    -- Change this to another player's name if you specifically need their data
+                                                                    -- but be aware it might not be replicated to your client.
 
--- From the decompiled script, these constants help us understand the data structure.
--- We can now use the actual value of v_u_26 directly from the decompiled code if we knew it.
--- For now, let's assume v_u_26 (MaxSlots) is 12, as it's a common max.
-local MAX_POSSIBLE_LISTINGS = 12 -- This should ideally be 'v_u_26' from Constants.TradeRealm.MaxSlots
-local DEFAULT_LISTING_SLOTS = 2  -- From 'v25.TradeRealm.DefaultSlots'
-local UPGRADE_STEP_SLOTS = 2     -- From 'v25.TradeRealm.UpgradeStep'
+-- From previous decompiled scripts, these are constant values that help us interpret the data.
+local MAX_POSSIBLE_LISTINGS = 12 -- From 'v25.TradeRealm.MaxSlots' (assuming it's 12)
+local DEFAULT_LISTING_SLOTS = 2  -- From 'v25.TradeRealm.DefaultSlots' (assuming 2 base slots)
+local UPGRADE_STEP_SLOTS = 2     -- From 'v25.TradeRealm.UpgradeStep' (assuming 2 slots per upgrade)
 
 -- Services
 local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 -- Main Script Execution
-print("--- Starting Market Stall Data Inspection (Via PlayerWrapper Instance Access) ---")
+print("--- Starting Market Stall Data Inspection (Direct Instance Access - No Sonar) ---")
 print("Target Player: " .. TARGET_PLAYER_NAME)
 
 local targetPlayer = Players:FindFirstChild(TARGET_PLAYER_NAME)
@@ -26,54 +27,49 @@ if not targetPlayer then
     return
 end
 
--- 1. Get the Sonar module (assuming it's in ReplicatedStorage)
-local SonarModule = ReplicatedStorage:WaitForChild("Sonar", 10) -- Wait up to 10 seconds
-if not SonarModule then
-    print("[ERROR] 'Sonar' module not found in ReplicatedStorage. Is this game using the Sonar framework?")
+-- Attempt to access the 'Data' folder directly under the player.
+-- Use WaitForChild to account for potential lazy loading of this folder.
+print("Attempting to find 'Data' folder under player...")
+local dataFolder = targetPlayer:WaitForChild("Data", 10) -- Wait up to 10 seconds for the 'Data' folder
+if not dataFolder then
+    print("[ERROR] 'Data' folder not found under player '" .. TARGET_PLAYER_NAME .. "' after 10 seconds.")
+    print("This means the game might not directly replicate player data as a 'Data' folder,")
+    print("or it's named differently, or it's simply not present on the client.")
     print("--- Inspection Complete (Failed) ---")
     return
 end
 
-local Sonar = require(SonarModule)
-if not Sonar then
-    print("[ERROR] Failed to require 'Sonar' module.")
+if not dataFolder:IsA("Folder") then
+    print("[ERROR] Found 'Data', but it's not a Folder (Type: " .. dataFolder.ClassName .. "). Expected a Folder.")
+    print("--- Inspection Complete (Failed) ---")
+    return
+end
+print("Found 'Data' folder.")
+
+
+-- Attempt to access the 'MarketStalls' folder within the 'Data' folder.
+print("Attempting to find 'MarketStalls' folder under 'Data'...")
+local marketStallsContainer = dataFolder:WaitForChild("MarketStalls", 10) -- Wait up to 10 seconds for 'MarketStalls'
+if not marketStallsContainer then
+    print("[ERROR] 'MarketStalls' folder not found under 'Data' for player '" .. TARGET_PLAYER_NAME .. "' after 10 seconds.")
+    print("This indicates the structure is different, or the data is not replicated as Instances.")
     print("--- Inspection Complete (Failed) ---")
     return
 end
 
--- 2. Get the PlayerWrapper module via Sonar
-local PlayerWrapperModule = Sonar("PlayerWrapper")
-if not PlayerWrapperModule or type(PlayerWrapperModule) ~= "table" or not PlayerWrapperModule.getWrapperFromPlayer then
-    print("[ERROR] 'PlayerWrapper' module not found via Sonar, or it doesn't expose 'getWrapperFromPlayer()'.")
+if not marketStallsContainer:IsA("Folder") then
+    print("[ERROR] Found 'MarketStalls', but it's not a Folder (Type: " .. marketStallsContainer.ClassName .. "). Expected a Folder.")
     print("--- Inspection Complete (Failed) ---")
     return
 end
+print("Found 'MarketStalls' folder.")
 
--- 3. Get the target player's PlayerWrapper instance
-local targetPlayerWrapper = PlayerWrapperModule.getWrapperFromPlayer(targetPlayer)
-if not targetPlayerWrapper then
-    print("[ERROR] PlayerWrapper.getWrapperFromPlayer(" .. TARGET_PLAYER_NAME .. ") returned nil.")
-    print("This means the player's wrapper data is not yet fully loaded or replicated to your client.")
-    print("--- Inspection Complete (Failed) ---")
-    return
-end
-
--- 4. Access the PlayerData.MarketStalls Instance
-local marketStallsContainer = targetPlayerWrapper.PlayerData and targetPlayerWrapper.PlayerData.MarketStalls
-
-if not marketStallsContainer or not marketStallsContainer:IsA("Folder") then -- Expecting a Folder or Model
-    print("[ERROR] PlayerWrapper.PlayerData.MarketStalls not found or is not a Folder/Instance.")
-    print("This indicates the player's market stall data is not available on the client's PlayerWrapper in the expected instance structure.")
-    print("--- Inspection Complete (Failed) ---")
-    return
-end
-
--- At this point, marketStallsContainer is a Roblox Instance (likely a Folder).
-print("\n--- Found PlayerWrapper.PlayerData.MarketStalls (Roblox Instance). Inspecting contents ---")
+-- At this point, marketStallsContainer is a Roblox Instance (Folder).
+print("\n--- Found Data.MarketStalls (Roblox Instance). Inspecting contents ---")
 
 print("\n--- MarketStalls Summary for " .. TARGET_PLAYER_NAME .. " ---")
 
--- Check for ShoomsRaised value (accessed as ValueBase)
+-- Check for ShoomsRaised value
 local shoomsRaised = marketStallsContainer:FindFirstChild("ShoomsRaised")
 if shoomsRaised and shoomsRaised:IsA("NumberValue") then
     print("Total Shooms Raised: " .. tostring(shoomsRaised.Value))
@@ -81,7 +77,7 @@ else
     print("ShoomsRaised (NumberValue) not found under MarketStalls.")
 end
 
--- Check for Upgrades value (accessed as ValueBase)
+-- Check for Upgrades value
 local upgrades = marketStallsContainer:FindFirstChild("Upgrades")
 local playerListingLimit = DEFAULT_LISTING_SLOTS
 if upgrades and upgrades:IsA("NumberValue") then
@@ -92,7 +88,7 @@ else
     print("Market Stall Upgrades (NumberValue) not found. Assuming " .. DEFAULT_LISTING_SLOTS .. " slots.")
 end
 
--- Check for EquippedSkin value (accessed as ValueBase)
+-- Check for EquippedSkin value
 local equippedSkin = marketStallsContainer:FindFirstChild("EquippedSkin")
 if equippedSkin and equippedSkin:IsA("StringValue") then
     print("Equipped Stall Skin: " .. (equippedSkin.Value == "" and "Default" or equippedSkin.Value))
